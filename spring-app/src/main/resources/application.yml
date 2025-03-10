@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:mysql://mysql:3306/mydb
+    username: root
+    password: password
+  jpa:
+    hibernate:
+      ddl-auto: update
+management:
+  tracing:
+    sampling:
+      probability: 1.0 # 모든 트레이스 수집

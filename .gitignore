@@ -1,0 +1,3 @@
+# Project exclude paths
+/spring-app/.gradle/
+/spring-app/build/
