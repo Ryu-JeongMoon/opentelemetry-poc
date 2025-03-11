@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   react-app:
     build:
@@ -8,8 +7,12 @@ services:
       - "3000:3000"
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=react-app,deployment.environment=dev
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
     depends_on:
       - spring-app
+      - otel-collector
 
   spring-app:
     build:
@@ -21,9 +24,14 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/mydb
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=password
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=spring-app,deployment.environment=dev
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
     depends_on:
       - mysql
+      - loki
       - otel-collector
 
   mysql:
@@ -37,23 +45,43 @@ services:
       - mysql-data:/var/lib/mysql
 
   otel-collector:
-    image: otel/opentelemetry-collector:latest
-    command: ["--config=/etc/otel-config.yaml"]
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yml"]
     volumes:
-      - ./otel-collector-config.yaml:/etc/otel-config.yaml:ro # 파일명 단순화
+      - ./otel-collector-config.yml:/etc/otel-collector-config.yml:ro
     ports:
-      - "4317:4317"
-      - "4318:4318"
+      - "4317:4317"  # gRPC
+      - "4318:4318"  # HTTP
+      - "9090:9090"  # Prometheus exporter
     depends_on:
       - tempo
+      - loki
+      - prometheus
 
   tempo:
     image: grafana/tempo:latest
-    command: ["-config.file=/etc/tempo-config.yaml"]
+    command: ["-config.file=/etc/tempo-config.yml"]
     volumes:
-      - ./tempo-config.yaml:/etc/tempo-config.yaml:ro # 파일명 유지
+      - ./tempo-config.yml:/etc/tempo-config.yml:ro
     ports:
       - "3200:3200"
+
+  loki:
+    image: grafana/loki:latest
+    command: ["-config.file=/etc/loki-config.yml"]
+    volumes:
+      - ./loki-config.yml:/etc/loki-config.yml:ro
+    ports:
+      - "3100:3100"
+
+  prometheus:
+    image: prom/prometheus:latest
+    command: ["--config.file=/etc/prometheus/prometheus-config.yml"]
+    volumes:
+      - ./prometheus-config.yml:/etc/prometheus/prometheus-config.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9091:9090"
 
   grafana:
     image: grafana/grafana:latest
@@ -63,7 +91,15 @@ services:
       - grafana-data:/var/lib/grafana
     depends_on:
       - tempo
+      - loki
+      - prometheus
+
+networks:
+  default:
+    name: otel-network
+    driver: bridge
 
 volumes:
   mysql-data:
   grafana-data:
+  prometheus-data:
